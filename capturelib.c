@@ -58,8 +58,8 @@
 #define CAPTURE_FRAMES (180+LAST_FRAMES)
 #define FRAMES_TO_ACQUIRE (CAPTURE_FRAMES + STARTUP_FRAMES + LAST_FRAMES)
 
-#define FRAMES_PER_SEC (1) 
-//#define FRAMES_PER_SEC (10) 
+//#define FRAMES_PER_SEC (1) 
+#define FRAMES_PER_SEC (10) 
 //#define FRAMES_PER_SEC (20) 
 //#define FRAMES_PER_SEC (25) 
 //#define FRAMES_PER_SEC (30) 
@@ -497,11 +497,13 @@ int seq_frame_process(void)
 
     printf("processing rb.tail=%d, rb.head=%d, rb.count=%d\n", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
 
-    ring_buffer.head_idx = (ring_buffer.head_idx + 2) % ring_buffer.ring_size;
+    //ring_buffer.head_idx = (ring_buffer.head_idx + 2) % ring_buffer.ring_size;
 
     cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
-    ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
-    ring_buffer.count = ring_buffer.count - 5;
+    ring_buffer.head_idx = (ring_buffer.head_idx + 1) % ring_buffer.ring_size;
+    ring_buffer.count--;;
+    //ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
+    //ring_buffer.count = ring_buffer.count - 5;
      	
     printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        

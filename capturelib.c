@@ -69,6 +69,7 @@
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
+#define DIFF_REQ (25) // difference requirement to select frame
 
 
 // Format is used by a number of functions, so made as a file global
@@ -102,6 +103,7 @@ struct ring_buffer_t
 
 static  struct ring_buffer_t	ring_buffer;
 static  struct ring_buffer_t	selected_ring_buffer;
+unsigned char last_frame[HRES*VRES*PIXEL_SIZE];
 
 static int              camera_device_fd = -1;
 struct buffer          *buffers;
@@ -141,13 +143,13 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     int written, i, total, dumpfd;
    
     snprintf(&ppm_dumpname[11], 9, "%04d", tag);
-    strncat(&ppm_dumpname[15], ".ppm", 5);
+    strcat(&ppm_dumpname[15], ".ppm");
     dumpfd = open(ppm_dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
 
     snprintf(&ppm_header[4], 11, "%010d", (int)time->tv_sec);
-    strncat(&ppm_header[14], " sec ", 5);
+    strcat(&ppm_header[14], " sec ");
     snprintf(&ppm_header[19], 11, "%010d", (int)((time->tv_nsec)/1000000));
-    strncat(&ppm_header[29], " msec \n"HRES_STR" "VRES_STR"\n255\n", 19);
+    strcat(&ppm_header[29], " msec \n"HRES_STR" "VRES_STR"\n255\n");
 
     // subtract 1 from sizeof header because it includes the null terminator for the string
     written=write(dumpfd, ppm_header, sizeof(ppm_header)-1);
@@ -177,13 +179,13 @@ static void dump_pgm(const void *p, int size, unsigned int tag, struct timespec 
     int written, i, total, dumpfd;
    
     snprintf(&pgm_dumpname[11], 9, "%04d", tag);
-    strncat(&pgm_dumpname[15], ".pgm", 5);
+    strcat(&pgm_dumpname[15], ".pgm");
     dumpfd = open(pgm_dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
 
     snprintf(&pgm_header[4], 11, "%010d", (int)time->tv_sec);
-    strncat(&pgm_header[14], " sec ", 5);
+    strcat(&pgm_header[14], " sec ");
     snprintf(&pgm_header[19], 11, "%010d", (int)((time->tv_nsec)/1000000));
-    strncat(&pgm_header[29], " msec \n"HRES_STR" "VRES_STR"\n255\n", 19);
+    strcat(&pgm_header[29], " msec \n"HRES_STR" "VRES_STR"\n255\n");
 
     // subtract 1 from sizeof header because it includes the null terminator for the string
     written=write(dumpfd, pgm_header, sizeof(pgm_header)-1);
@@ -270,6 +272,7 @@ void yuv2rgb(int y, int u, int v, unsigned char *r, unsigned char *g, unsigned c
 int read_framecnt=-STARTUP_FRAMES;
 int process_framecnt=0;
 int save_framecnt=0;
+int selected_framecnt=0;
 
 unsigned char scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
 
@@ -465,11 +468,26 @@ int seq_frame_read(void)
         errno_exit("VIDIOC_QBUF");
 }
 
+int * absdiff(unsigned char *p, unsigned char *q) {
+    static int diff[HRES*VRES*PIXEL_SIZE];
+    for (int i = 0; i < (HRES*VRES*PIXEL_SIZE); i++) {
+        diff[i] = abs((int)p[i] - (int)q[i]);
+    }
+    return diff;
+}
 
+float sum(int *p,int size) {
+    int retval = 0;
+    for (int i = 0; i < size; i++) {
+        retval += *(p + i);
+    }
+    return retval;
+}
 
 int seq_frame_process(void)
 {
     int cnt;
+    unsigned char curr_frame[HRES*VRES*PIXEL_SIZE];
 
     printf("processing rb.tail=%d, rb.head=%d, rb.count=%d\n", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
 
@@ -482,49 +500,49 @@ int seq_frame_process(void)
      	
     printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        
-    if(process_framecnt > 0)
+    if(process_framecnt > 1)
     {	
         clock_gettime(CLOCK_MONOTONIC, &time_now);
         fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
                 printf(" processed at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
         
         // diff the frames
-        unsigned char curr_frame = ring_buffer.save_frame[ring_buffer.head_idx].frame[0];
+        int *diff_frame;
+        unsigned char *curr_frame = (void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]);
+        diff_frame = absdiff(curr_frame,last_frame);
+        
         // store worst case
+        float wc = HRES*VRES*PIXEL_SIZE;
         
         // calculate percent diff
+        float sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
+        float pdiff = sum_diff / wc * 100;
         
         // check framecount
-        
-        // store last frame
-        
-        // perform selection
+                
         
         // if we met the diff requirement, save off copy of image with time-stamp here
-        selected_ring_buffer.save_frame[selected_ring_buffer.tail_idx].frame[0] = curr_frame;
+        if (pdiff > DIFF_REQ) {
+            memcpy((void *)&(selected_ring_buffer.save_frame[selected_ring_buffer.tail_idx].frame[0]),(void *)&(curr_frame),HRES*VRES*PIXEL_SIZE);
 
-        ring_buffer.tail_idx = (ring_buffer.tail_idx + 1) % ring_buffer.ring_size;
-        ring_buffer.count++;
-
-        clock_gettime(CLOCK_MONOTONIC, &time_now);
-        fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
-
-        if(read_framecnt > 0)
-        {	
+            selected_ring_buffer.tail_idx = (selected_ring_buffer.tail_idx + 1) % selected_ring_buffer.ring_size;
+            selected_ring_buffer.count++;
+            selected_framecnt++;
+                
+            clock_gettime(CLOCK_MONOTONIC, &time_now);
+            fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
+            
             //printf("read_framecnt=%d, rb.tail=%d, rb.head=%d, rb.count=%d at %lf and %lf FPS", read_framecnt, ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
 
             //syslog(LOG_CRIT, "read_framecnt=%d, rb.tail=%d, rb.head=%d, rb.count=%d at %lf and %lf FPS", read_framecnt, ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
-            syslog(LOG_CRIT, "read_framecnt=%d at %lf and %lf FPS", read_framecnt, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
-        }
-        else 
-        {
-            printf("at %lf\n", fnow);
+            syslog(LOG_CRIT, "selected_framecnt=%d at %lf and %lf FPS", selected_framecnt, (fnow-fstart), (double)(selected_framecnt) / (fnow-fstart));
         }
     }
     else 
     {
         printf("at %lf\n", fnow-fstart);
     }
+    memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
 
     return cnt;
 }

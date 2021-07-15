@@ -519,11 +519,14 @@ int seq_frame_process(void)
         int sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
         double pdiff = (double)sum_diff / (double)wc * 100.0;
         printf("pdiff: %lf\n",pdiff);
+        
         // check framecount
-                
+        
         
         // if we met the diff requirement, save off copy of image with time-stamp here
         if (pdiff > DIFF_REQ) {
+            
+            
             memcpy((void *)&(selected_ring_buffer.save_frame[selected_ring_buffer.tail_idx].frame[0]),(void *)&(curr_frame),HRES*VRES*PIXEL_SIZE);
 
             selected_ring_buffer.tail_idx = (selected_ring_buffer.tail_idx + 1) % selected_ring_buffer.ring_size;

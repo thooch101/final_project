@@ -271,12 +271,13 @@ void yuv2rgb(int y, int u, int v, unsigned char *r, unsigned char *g, unsigned c
 // always ignore STARTUP_FRAMES while camera adjusts to lighting, focuses, etc.
 int read_framecnt=-STARTUP_FRAMES;
 int process_framecnt=0;
+int selected_process_framecnt=0;
 int save_framecnt=0;
 int selected_framecnt=0;
 int last_selected_framecnt=0;
 
 unsigned char scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
-
+unsigned char selected_scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
 
 static int save_image(const void *p, int size, struct timespec *frame_time)
 {
@@ -307,7 +308,7 @@ static int save_image(const void *p, int size, struct timespec *frame_time)
 #elif defined(COLOR_CONVERT_GRAY)
         if(save_framecnt > 0)
         {
-            dump_pgm(frame_ptr, (size/2), process_framecnt, frame_time);
+            dump_pgm(frame_ptr, (size/2), selected_process_framecnt, frame_time);
             printf("Dump YUYV converted to YY size %d\n", size);
         }
 #endif
@@ -317,7 +318,7 @@ static int save_image(const void *p, int size, struct timespec *frame_time)
     else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_RGB24)
     {
         printf("Dump RGB as-is size %d\n", size);
-        dump_ppm(frame_ptr, size, process_framecnt, frame_time);
+        dump_ppm(frame_ptr, size, selected_process_framecnt, frame_time);
     }
     else
     {
@@ -379,6 +380,58 @@ static int process_image(const void *p, int size)
     }
 
     return process_framecnt;
+}
+
+static int process_selected_image(const void *p, int size)
+{
+    int i, newi, newsize=0;
+    int y_temp, y2_temp, u_temp, v_temp;
+    unsigned char *frame_ptr = (unsigned char *)p;
+
+    selected_process_framecnt++;
+    printf("process frame %d: ", selected_process_framecnt);
+    
+    if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_GREY)
+    {
+        printf("NO PROCESSING for graymap as-is size %d\n", size);
+    }
+
+    else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV)
+    {
+#if defined(COLOR_CONVERT_RGB)
+       
+        // Pixels are YU and YV alternating, so YUYV which is 4 bytes
+        // We want RGB, so RGBRGB which is 6 bytes
+        //
+        for(i=0, newi=0; i<size; i=i+4, newi=newi+6)
+        {
+            y_temp=(int)frame_ptr[i]; u_temp=(int)frame_ptr[i+1]; y2_temp=(int)frame_ptr[i+2]; v_temp=(int)frame_ptr[i+3];
+            yuv2rgb(y_temp, u_temp, v_temp, &selected_scratchpad_buffer[newi], &selected_scratchpad_buffer[newi+1], &selected_scratchpad_buffer[newi+2]);
+            yuv2rgb(y2_temp, u_temp, v_temp, &selected_scratchpad_buffer[newi+3], &selected_scratchpad_buffer[newi+4], &selected_scratchpad_buffer[newi+5]);
+        }
+#elif defined(COLOR_CONVERT_GRAY)
+        // Pixels are YU and YV alternating, so YUYV which is 4 bytes
+        // We want Y, so YY which is 2 bytes
+        //
+        for(i=0, newi=0; i<size; i=i+4, newi=newi+2)
+        {
+            // Y1=first byte and Y2=third byte
+            selected_scratchpad_buffer[newi]=frame_ptr[i];
+            selected_scratchpad_buffer[newi+1]=frame_ptr[i+2];
+        }
+#endif
+    }
+
+    else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_RGB24)
+    {
+        printf("NO PROCESSING for RGB as-is size %d\n", size);
+    }
+    else
+    {
+        printf("NO PROCESSING ERROR - unknown format\n");
+    }
+
+    return selected_process_framecnt;
 }
 
 
@@ -487,7 +540,7 @@ int sum(int *p,int size) {
 
 int seq_frame_process(void)
 {
-    int cnt;
+    int cnt, scnt;
     unsigned char curr_frame[HRES*VRES*PIXEL_SIZE];
 
     printf("processing rb.tail=%d, rb.head=%d, rb.count=%d\n", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
@@ -495,9 +548,6 @@ int seq_frame_process(void)
     ring_buffer.head_idx = (ring_buffer.head_idx + 2) % ring_buffer.ring_size;
 
     cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
-
-    ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
-    ring_buffer.count = ring_buffer.count - 5;
      	
     printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        
@@ -527,10 +577,7 @@ int seq_frame_process(void)
         if (pdiff > DIFF_REQ) {
             
             
-            memcpy((void *)&(selected_ring_buffer.save_frame[selected_ring_buffer.tail_idx].frame[0]),(void *)&(curr_frame),HRES*VRES*PIXEL_SIZE);
-
-            selected_ring_buffer.tail_idx = (selected_ring_buffer.tail_idx + 1) % selected_ring_buffer.ring_size;
-            selected_ring_buffer.count++;
+            scnt = process_selected_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
             selected_framecnt++;
                 
             clock_gettime(CLOCK_MONOTONIC, &time_now);
@@ -546,6 +593,8 @@ int seq_frame_process(void)
     {
         printf("at %lf\n", fnow-fstart);
     }
+    ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
+    ring_buffer.count = ring_buffer.count - 5;
     memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
     return cnt;
 }

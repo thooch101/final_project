@@ -55,7 +55,7 @@
 
 #define STARTUP_FRAMES (30)
 #define LAST_FRAMES (1)
-#define CAPTURE_FRAMES (300+LAST_FRAMES)
+#define CAPTURE_FRAMES (180+LAST_FRAMES)
 #define FRAMES_TO_ACQUIRE (CAPTURE_FRAMES + STARTUP_FRAMES + LAST_FRAMES)
 
 #define FRAMES_PER_SEC (1) 
@@ -64,8 +64,8 @@
 //#define FRAMES_PER_SEC (25) 
 //#define FRAMES_PER_SEC (30) 
 
-#define COLOR_CONVERT_RGB
-//#define COLOR_CONVERT_GRAY
+//#define COLOR_CONVERT_RGB
+#define COLOR_CONVERT_GRAY
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
@@ -101,6 +101,7 @@ struct ring_buffer_t
 };
 
 static  struct ring_buffer_t	ring_buffer;
+static  struct ring_buffer_t	selected_ring_buffer;
 
 static int              camera_device_fd = -1;
 struct buffer          *buffers;
@@ -478,7 +479,6 @@ int seq_frame_process(void)
 
     ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
     ring_buffer.count = ring_buffer.count - 5;
-
      	
     printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        
@@ -487,6 +487,44 @@ int seq_frame_process(void)
         clock_gettime(CLOCK_MONOTONIC, &time_now);
         fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
                 printf(" processed at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
+        
+        //convert to OpenCV data type
+        CvMat cvmat = cvMat(HRES,VRES,CV_BGR2GRAY,(voidd*)scratchpad_buffer);
+        IplImage * img;
+        img = cvDecodeImage(&cvmat,1);
+        
+        // diff the frames
+        unsigned char curr_frame = ring_buffer.save_frame[ring_buffer.head_idx].frame[0];
+        // store worst case
+        
+        // calculate percent diff
+        
+        // check framecount
+        
+        // store last frame
+        
+        // perform selection
+        
+        // if we met the diff requirement, save off copy of image with time-stamp here
+        memcpy((void *)&(diffed_ring_buffer.save_frame[diffed_ring_buffer.tail_idx].frame[0]), ring_buffer.save_frame[ring_buffer.tail_idx].frame[0], HRES*VRES*PIXEL_SIZE);
+
+        ring_buffer.tail_idx = (ring_buffer.tail_idx + 1) % ring_buffer.ring_size;
+        ring_buffer.count++;
+
+        clock_gettime(CLOCK_MONOTONIC, &time_now);
+        fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
+
+        if(read_framecnt > 0)
+        {	
+            //printf("read_framecnt=%d, rb.tail=%d, rb.head=%d, rb.count=%d at %lf and %lf FPS", read_framecnt, ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
+
+            //syslog(LOG_CRIT, "read_framecnt=%d, rb.tail=%d, rb.head=%d, rb.count=%d at %lf and %lf FPS", read_framecnt, ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
+            syslog(LOG_CRIT, "read_framecnt=%d at %lf and %lf FPS", read_framecnt, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
+        }
+        else 
+        {
+            printf("at %lf\n", fnow);
+        }
     }
     else 
     {

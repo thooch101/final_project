@@ -5,12 +5,14 @@
 // Sequencer - 100 Hz 
 //                   [gives semaphores to all other services]
 // Service_1 - 25 Hz, every 4th Sequencer loop reads a V4L2 video frame
-// Service_2 -  1 Hz, every 100th Sequencer loop writes out the current video frame
+// Service_2 - 25 Hz, every 4th Sequencer loop performes processing, diff, and selection
+// Service_3 -  1 Hz, every 100th Sequencer loop writes out the current video frame
 //
 // With the above, priorities by RM policy would be:
 //
 // Sequencer = RT_MAX	@ 100 Hz
 // Servcie_1 = RT_MAX-1	@ 25  Hz
+// Service_2 = RT_MAX-2	@ 25   Hz
 // Service_2 = RT_MIN	@ 1   Hz
 //
 
@@ -43,6 +45,9 @@
 #define RT_CORE (2)
 
 #define NUM_THREADS (3)
+
+#define STARTUP_FRAMES (30)
+#define FRAME_COUNT (STARTUP_FRAMES+180+1)
 
 // Of the available user space clocks, CLOCK_MONONTONIC_RAW is typically most precise and not subject to 
 // updates from external timer adjustments
@@ -210,13 +215,13 @@ void main(void)
         printf("pthread_create successful for service 1\n");
 
 
-    // Service_2 = RT_MAX-2	@ 1 Hz
+    // Service_2 = RT_MAX-2	@ 25 Hz
     //
     rt_param[1].sched_priority=rt_max_prio-2;
     pthread_attr_setschedparam(&rt_sched_attr[1], &rt_param[1]);
     rc=pthread_create(&threads[1], &rt_sched_attr[1], Service_2_frame_process, (void *)&(threadParams[1]));
     if(rc < 0)
-        perror("pthread_create for service 2 - flash frame storage");
+        perror("pthread_create for service 2 - frame processing");
     else
         printf("pthread_create successful for service 2\n");
 
@@ -311,11 +316,11 @@ void Sequencer(int id)
 
     // Release each service at a sub-rate of the generic sequencer rate
 
-    // Servcie_1 @ 5 Hz
-    if((seqCnt % 20) == 0) sem_post(&semS1);
+    // Service_1 @ 25 Hz
+    if((seqCnt % 4) == 0) sem_post(&semS1);
 
-    // Service_2 @ 1 Hz
-    if((seqCnt % 100) == 0) sem_post(&semS2);
+    // Service_2 @ 25 Hz
+    if((seqCnt % 4) == 0) sem_post(&semS2);
 
     // Service_3 @ 1 Hz
     if((seqCnt % 100) == 0) sem_post(&semS3);

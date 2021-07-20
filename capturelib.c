@@ -488,11 +488,6 @@ int seq_frame_process(void)
         fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
                 printf(" processed at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
         
-        //convert to OpenCV data type
-        CvMat cvmat = cvMat(HRES,VRES,CV_BGR2GRAY,(voidd*)scratchpad_buffer);
-        IplImage * img;
-        img = cvDecodeImage(&cvmat,1);
-        
         // diff the frames
         unsigned char curr_frame = ring_buffer.save_frame[ring_buffer.head_idx].frame[0];
         // store worst case
@@ -506,7 +501,7 @@ int seq_frame_process(void)
         // perform selection
         
         // if we met the diff requirement, save off copy of image with time-stamp here
-        memcpy((void *)&(diffed_ring_buffer.save_frame[diffed_ring_buffer.tail_idx].frame[0]), ring_buffer.save_frame[ring_buffer.tail_idx].frame[0], HRES*VRES*PIXEL_SIZE);
+        selected_ring_buffer.save_frame[selected_ring_buffer.tail_idx].frame[0] = curr_frame;
 
         ring_buffer.tail_idx = (ring_buffer.tail_idx + 1) % ring_buffer.ring_size;
         ring_buffer.count++;

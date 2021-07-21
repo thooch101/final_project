@@ -273,6 +273,7 @@ int read_framecnt=-STARTUP_FRAMES;
 int process_framecnt=0;
 int save_framecnt=0;
 int selected_framecnt=0;
+int last_selected_framecnt=0;
 
 unsigned char scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
 
@@ -476,7 +477,7 @@ int * absdiff(unsigned char *p, unsigned char *q) {
     return diff;
 }
 
-float sum(int *p,int size) {
+int sum(int *p,int size) {
     int retval = 0;
     for (int i = 0; i < size; i++) {
         retval += *(p + i);
@@ -508,16 +509,16 @@ int seq_frame_process(void)
         
         // diff the frames
         int *diff_frame;
-        unsigned char *curr_frame = (void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]);
+        unsigned char *curr_frame = (void *)&(scratchpad_buffer);
         diff_frame = absdiff(curr_frame,last_frame);
         
         // store worst case
-        float wc = HRES*VRES*PIXEL_SIZE;
+        int wc = 255*HRES*VRES*PIXEL_SIZE;
         
         // calculate percent diff
-        float sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
-        float pdiff = sum_diff / wc * 100;
-        
+        int sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
+        double pdiff = (double)sum_diff / (double)wc * 100.0;
+        printf("pdiff: %lf\n",pdiff);
         // check framecount
                 
         
@@ -543,30 +544,39 @@ int seq_frame_process(void)
         printf("at %lf\n", fnow-fstart);
     }
     memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
-
     return cnt;
 }
 
 
 int seq_frame_store(void)
 {
-    int cnt;
+    int cnt = 0;
+    if (selected_framecnt > last_selected_framecnt) {
+        
+        selected_ring_buffer.head_idx = (selected_ring_buffer.head_idx + 2) % selected_ring_buffer.ring_size;
 
-    cnt=save_image(scratchpad_buffer, HRES*VRES*PIXEL_SIZE, &time_now);
-    printf("save_framecnt=%d ", save_framecnt);
+        cnt=save_image(selected_ring_buffer.save_frame[selected_ring_buffer.head_idx].frame, HRES*VRES*PIXEL_SIZE, &time_now);
+        
+        selected_ring_buffer.head_idx = (selected_ring_buffer.head_idx + 3) % selected_ring_buffer.ring_size;
+        selected_ring_buffer.count = selected_ring_buffer.count - 5;
+        printf("save_framecnt=%d ", save_framecnt);
 
 
-    if(save_framecnt > 0)
-    {	
-        clock_gettime(CLOCK_MONOTONIC, &time_now);
-        fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
-                printf(" saved at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
+        if(save_framecnt > 0)
+        {	
+            clock_gettime(CLOCK_MONOTONIC, &time_now);
+            fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
+                    printf(" saved at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
+        }
+        else 
+        {
+            printf("at %lf\n", fnow-fstart);
+        }
     }
-    else 
-    {
-        printf("at %lf\n", fnow-fstart);
+    else {
+        printf("No frame saved\n");
     }
-
+    last_selected_framecnt = selected_framecnt;
     return cnt;
 }
 
@@ -767,6 +777,11 @@ static void init_mmap(char *dev_name)
 	ring_buffer.head_idx=0;
 	ring_buffer.count=0;
 	ring_buffer.ring_size=3*FRAMES_PER_SEC;
+    
+    selected_ring_buffer.tail_idx=0;
+	selected_ring_buffer.head_idx=0;
+	selected_ring_buffer.count=0;
+	selected_ring_buffer.ring_size=3*FRAMES_PER_SEC;
 
         if (-1 == xioctl(camera_device_fd, VIDIOC_REQBUFS, &req)) 
         {

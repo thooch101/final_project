@@ -178,10 +178,28 @@ void main(void)
     for(i=0; i < NUM_THREADS; i++)
     {
 
-      // run ALL threads on core RT_CORE
+      // run even indexed threads on core 2
+      if(i % 2 == 0)
+      {
+          CPU_ZERO(&threadcpu);
+          cpuidx=(2);
+          CPU_SET(cpuidx, &threadcpu);
+      }
+
+      // run odd indexed threads on core 3
+      else
+      {
+          CPU_ZERO(&threadcpu);
+          cpuidx=(3);
+          CPU_SET(cpuidx, &threadcpu);
+      }
+      
+      /*
       CPU_ZERO(&threadcpu);
       cpuidx=(RT_CORE);
       CPU_SET(cpuidx, &threadcpu);
+      */
+      
 
       rc=pthread_attr_init(&rt_sched_attr[i]);
       rc=pthread_attr_setinheritsched(&rt_sched_attr[i], PTHREAD_EXPLICIT_SCHED);
@@ -317,13 +335,13 @@ void Sequencer(int id)
     // Release each service at a sub-rate of the generic sequencer rate
 
     // Service_1 @ 25 Hz
-    if((seqCnt % 4) == 0) sem_post(&semS1);
+    if((seqCnt % 20) == 0) sem_post(&semS1);
 
     // Service_2 @ 25 Hz
-    if((seqCnt % 50) == 0) sem_post(&semS2);
+    if((seqCnt % 100) == 0) sem_post(&semS2);
 
     // Service_3 @ 1 Hz
-    if((seqCnt % 50) == 0) sem_post(&semS3);
+    if((seqCnt % 100) == 0) sem_post(&semS3);
 }
 
 
@@ -356,7 +374,7 @@ void *Service_1_frame_acquisition(void *threadp)
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
         syslog(LOG_CRIT, "S1 at 25 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
 
-	if(S1Cnt > 250) {abortTest=TRUE;};
+	//if(S1Cnt > 250) {abortTest=TRUE;};
     }
 
     // Resource shutdown here
@@ -421,7 +439,7 @@ void *Service_3_frame_storage(void *threadp)
         syslog(LOG_CRIT, "S3 at 1 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
 
 	// after last write, set synchronous abort
-	if(store_cnt == 10) {abortTest=TRUE;};
+	if(store_cnt >= 181) {abortTest=TRUE;};
     }
 
     pthread_exit((void *)0);

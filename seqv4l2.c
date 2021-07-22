@@ -320,10 +320,10 @@ void Sequencer(int id)
     if((seqCnt % 4) == 0) sem_post(&semS1);
 
     // Service_2 @ 25 Hz
-    if((seqCnt % 4) == 0) sem_post(&semS2);
+    if((seqCnt % 25) == 0) sem_post(&semS2);
 
     // Service_3 @ 1 Hz
-    if((seqCnt % 100) == 0) sem_post(&semS3);
+    if((seqCnt % 25) == 0) sem_post(&semS3);
 }
 
 

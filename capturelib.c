@@ -69,7 +69,7 @@
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
-#define DIFF_REQ (25) // difference requirement to select frame
+#define DIFF_REQ (17.4) // difference requirement to select frame
 
 
 // Format is used by a number of functions, so made as a file global

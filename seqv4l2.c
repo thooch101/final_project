@@ -177,7 +177,7 @@ void main(void)
 
     for(i=0; i < NUM_THREADS; i++)
     {
-    
+        /*
       // run even indexed threads on core 2
       if(i == 0)
       {
@@ -193,14 +193,11 @@ void main(void)
           cpuidx=(3);
           CPU_SET(cpuidx, &threadcpu);
       }
+      */ 
       
-      
-      /*
       CPU_ZERO(&threadcpu);
       cpuidx=(RT_CORE);
-      CPU_SET(cpuidx, &threadcpu);
-      */
-      
+      CPU_SET(cpuidx, &threadcpu);      
 
       rc=pthread_attr_init(&rt_sched_attr[i]);
       rc=pthread_attr_setinheritsched(&rt_sched_attr[i], PTHREAD_EXPLICIT_SCHED);
@@ -336,13 +333,13 @@ void Sequencer(int id)
     // Release each service at a sub-rate of the generic sequencer rate
 
     // Service_1 @ 25 Hz
-    if((seqCnt % 10) == 0) sem_post(&semS1);
+    if((seqCnt % 20) == 0) sem_post(&semS1);
 
     // Service_2 @ 25 Hz
-    if((seqCnt % 25) == 0) sem_post(&semS2);
+    if((seqCnt % 20) == 0) sem_post(&semS2);
 
     // Service_3 @ 1 Hz
-    if((seqCnt % 25) == 0) sem_post(&semS3);
+    if((seqCnt % 20) == 0) sem_post(&semS3);
 }
 
 

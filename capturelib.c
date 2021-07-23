@@ -58,8 +58,8 @@
 #define CAPTURE_FRAMES (180+LAST_FRAMES)
 #define FRAMES_TO_ACQUIRE (CAPTURE_FRAMES + STARTUP_FRAMES + LAST_FRAMES)
 
-#define FRAMES_PER_SEC (1) 
-//#define FRAMES_PER_SEC (10) 
+//#define FRAMES_PER_SEC (1) 
+#define FRAMES_PER_SEC (10) 
 //#define FRAMES_PER_SEC (20) 
 //#define FRAMES_PER_SEC (25) 
 //#define FRAMES_PER_SEC (30) 
@@ -69,7 +69,7 @@
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
-#define DIFF_REQ (17.4) // difference requirement to select frame
+#define DIFF_REQ (0.3) // difference requirement to select frame
 
 
 // Format is used by a number of functions, so made as a file global
@@ -102,7 +102,6 @@ struct ring_buffer_t
 };
 
 static  struct ring_buffer_t	ring_buffer;
-static  struct ring_buffer_t	selected_ring_buffer;
 unsigned char last_frame[HRES*VRES*PIXEL_SIZE];
 
 static int              camera_device_fd = -1;
@@ -275,8 +274,11 @@ int save_framecnt=0;
 int selected_framecnt=0;
 int last_selected_framecnt=0;
 
-unsigned char scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
+// use this to determine if need to capture a frame on this tick
+int need_capture=1;
 
+unsigned char scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
+unsigned char selected_scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
 
 static int save_image(const void *p, int size, struct timespec *frame_time)
 {
@@ -307,7 +309,7 @@ static int save_image(const void *p, int size, struct timespec *frame_time)
 #elif defined(COLOR_CONVERT_GRAY)
         if(save_framecnt > 0)
         {
-            dump_pgm(frame_ptr, (size/2), process_framecnt, frame_time);
+            dump_pgm(frame_ptr, (size/2), selected_framecnt, frame_time);
             printf("Dump YUYV converted to YY size %d\n", size);
         }
 #endif
@@ -317,7 +319,7 @@ static int save_image(const void *p, int size, struct timespec *frame_time)
     else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_RGB24)
     {
         printf("Dump RGB as-is size %d\n", size);
-        dump_ppm(frame_ptr, size, process_framecnt, frame_time);
+        dump_ppm(frame_ptr, size, selected_framecnt, frame_time);
     }
     else
     {
@@ -485,19 +487,21 @@ int sum(int *p,int size) {
     return retval;
 }
 
+double ma_percent_diff;
+double percent_diff_old;
+
 int seq_frame_process(void)
 {
-    int cnt;
-    unsigned char curr_frame[HRES*VRES*PIXEL_SIZE];
-
+    int cnt, scnt;
     printf("processing rb.tail=%d, rb.head=%d, rb.count=%d\n", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
 
-    ring_buffer.head_idx = (ring_buffer.head_idx + 2) % ring_buffer.ring_size;
+    //ring_buffer.head_idx = (ring_buffer.head_idx + 2) % ring_buffer.ring_size;
 
     cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
-
-    ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
-    ring_buffer.count = ring_buffer.count - 5;
+    ring_buffer.head_idx = (ring_buffer.head_idx + 1) % ring_buffer.ring_size;
+    ring_buffer.count--;
+    //ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
+    //ring_buffer.count = ring_buffer.count - 5;
      	
     printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        
@@ -513,24 +517,24 @@ int seq_frame_process(void)
         diff_frame = absdiff(curr_frame,last_frame);
         
         // store worst case
-        int wc = 255*HRES*VRES*PIXEL_SIZE;
+        int wc = 255*HRES*VRES;
         
         // calculate percent diff
         int sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
-        double pdiff = (double)sum_diff / (double)wc * 100.0;
+        double pdiff = ((double)sum_diff / (double)wc) * 100.0;
         printf("pdiff: %lf\n",pdiff);
         
         // check framecount
-        
-        
-        // if we met the diff requirement, save off copy of image with time-stamp here
-        if (pdiff > DIFF_REQ) {
+        if(process_framecnt < 3)
+            ma_percent_diff=(pdiff+percent_diff_old)/(double)process_framecnt;
+        else
+            ma_percent_diff = ( (ma_percent_diff * (double)process_framecnt) + pdiff ) / (double)(process_framecnt+1);
             
-            
-            memcpy((void *)&(selected_ring_buffer.save_frame[selected_ring_buffer.tail_idx].frame[0]),(void *)&(curr_frame),HRES*VRES*PIXEL_SIZE);
-
-            selected_ring_buffer.tail_idx = (selected_ring_buffer.tail_idx + 1) % selected_ring_buffer.ring_size;
-            selected_ring_buffer.count++;
+        percent_diff_old = pdiff;
+        
+        // if we met the diff requirement and have not capture a frame on this stop, save off copy of image with time-stamp here
+        if (pdiff > DIFF_REQ && need_capture==1) {
+            need_capture = 0;
             selected_framecnt++;
                 
             clock_gettime(CLOCK_MONOTONIC, &time_now);
@@ -541,12 +545,16 @@ int seq_frame_process(void)
             //syslog(LOG_CRIT, "read_framecnt=%d, rb.tail=%d, rb.head=%d, rb.count=%d at %lf and %lf FPS", read_framecnt, ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count, (fnow-fstart), (double)(read_framecnt) / (fnow-fstart));
             syslog(LOG_CRIT, "selected_framecnt=%d at %lf and %lf FPS", selected_framecnt, (fnow-fstart), (double)(selected_framecnt) / (fnow-fstart));
         }
+        // once a tick starts, flag that we are ready to capture once it settles
+        else if (pdiff < DIFF_REQ && need_capture==0) {
+            need_capture = 1;
+        }
+        memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
     }
     else 
     {
         printf("at %lf\n", fnow-fstart);
     }
-    memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
     return cnt;
 }
 
@@ -555,13 +563,7 @@ int seq_frame_store(void)
 {
     int cnt = 0;
     if (selected_framecnt > last_selected_framecnt) {
-        
-        selected_ring_buffer.head_idx = (selected_ring_buffer.head_idx + 2) % selected_ring_buffer.ring_size;
-
-        cnt=save_image(selected_ring_buffer.save_frame[selected_ring_buffer.head_idx].frame, HRES*VRES*PIXEL_SIZE, &time_now);
-        
-        selected_ring_buffer.head_idx = (selected_ring_buffer.head_idx + 3) % selected_ring_buffer.ring_size;
-        selected_ring_buffer.count = selected_ring_buffer.count - 5;
+        cnt=save_image(scratchpad_buffer, HRES*VRES*PIXEL_SIZE, &time_now);
         printf("save_framecnt=%d ", save_framecnt);
 
 
@@ -570,6 +572,7 @@ int seq_frame_store(void)
             clock_gettime(CLOCK_MONOTONIC, &time_now);
             fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
                     printf(" saved at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
+            syslog(LOG_CRIT,"07/22/2021 %lf trho9058: [Course #:4] [Final Project] [Frame Count: %d] [Image Capture Start Time: %lf seconds]",fnow,save_framecnt,(fnow-fstart));
         }
         else 
         {
@@ -780,11 +783,6 @@ static void init_mmap(char *dev_name)
 	ring_buffer.head_idx=0;
 	ring_buffer.count=0;
 	ring_buffer.ring_size=3*FRAMES_PER_SEC;
-    
-    selected_ring_buffer.tail_idx=0;
-	selected_ring_buffer.head_idx=0;
-	selected_ring_buffer.count=0;
-	selected_ring_buffer.ring_size=3*FRAMES_PER_SEC;
 
         if (-1 == xioctl(camera_device_fd, VIDIOC_REQBUFS, &req)) 
         {

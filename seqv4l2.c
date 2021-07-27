@@ -102,6 +102,21 @@ void main(void)
 {
     struct timespec current_time_val, current_time_res;
     double current_realtime, current_realtime_res;
+       
+   // initialize some varibles for logging 'uname -a' output;
+   FILE *fp;
+   char buf[128];
+   char *cmd = "uname -a";
+   
+   //openlog("[COURSE#:4][Final Project]",0,LOG_USER); // open log
+   
+   // store command output
+   fp = popen(cmd, "r");
+   
+   // write output to log
+   while (fgets(buf, 128, fp) != NULL) {
+        syslog(LOG_INFO,"%s",buf);
+    }
 
     char *dev_name="/dev/video0";
 
@@ -126,22 +141,22 @@ void main(void)
     // required to get camera initialized and ready
     seq_frame_read();
 
-    printf("Starting High Rate Sequencer Demo\n");
+    //printf("Starting High Rate Sequencer Demo\n");
     clock_gettime(MY_CLOCK_TYPE, &start_time_val); start_realtime=realtime(&start_time_val);
     clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
     clock_getres(MY_CLOCK_TYPE, &current_time_res); current_realtime_res=realtime(&current_time_res);
-    printf("START High Rate Sequencer @ sec=%6.9lf with resolution %6.9lf\n", (current_realtime - start_realtime), current_realtime_res);
-    syslog(LOG_CRIT, "START High Rate Sequencer @ sec=%6.9lf with resolution %6.9lf\n", (current_realtime - start_realtime), current_realtime_res);
+    //printf("START High Rate Sequencer @ sec=%6.9lf with resolution %6.9lf\n", (current_realtime - start_realtime), current_realtime_res);
+    //syslog(LOG_CRIT, "START High Rate Sequencer @ sec=%6.9lf with resolution %6.9lf\n", (current_realtime - start_realtime), current_realtime_res);
 
 
-   printf("System has %d processors configured and %d available.\n", get_nprocs_conf(), get_nprocs());
+   //printf("System has %d processors configured and %d available.\n", get_nprocs_conf(), get_nprocs());
 
    CPU_ZERO(&allcpuset);
 
    for(i=0; i < NUM_CPU_CORES; i++)
        CPU_SET(i, &allcpuset);
 
-   printf("Using CPUS=%d from total available.\n", CPU_COUNT(&allcpuset));
+   //printf("Using CPUS=%d from total available.\n", CPU_COUNT(&allcpuset));
 
 
     // initialize the sequencer semaphores
@@ -164,15 +179,15 @@ void main(void)
 
     pthread_attr_getscope(&main_attr, &scope);
 
-    if(scope == PTHREAD_SCOPE_SYSTEM)
-      printf("PTHREAD SCOPE SYSTEM\n");
-    else if (scope == PTHREAD_SCOPE_PROCESS)
-      printf("PTHREAD SCOPE PROCESS\n");
-    else
-      printf("PTHREAD SCOPE UNKNOWN\n");
+    //if(scope == PTHREAD_SCOPE_SYSTEM)
+      //printf("PTHREAD SCOPE SYSTEM\n");
+    //else if (scope == PTHREAD_SCOPE_PROCESS)
+      //printf("PTHREAD SCOPE PROCESS\n");
+    //else
+      //printf("PTHREAD SCOPE UNKNOWN\n");
 
-    printf("rt_max_prio=%d\n", rt_max_prio);
-    printf("rt_min_prio=%d\n", rt_min_prio);
+    //printf("rt_max_prio=%d\n", rt_max_prio);
+    //printf("rt_min_prio=%d\n", rt_min_prio);
 
 
     for(i=0; i < NUM_THREADS; i++)
@@ -196,7 +211,7 @@ void main(void)
       */ 
       
       CPU_ZERO(&threadcpu);
-      cpuidx=(RT_CORE);
+      cpuidx=(i+1);
       CPU_SET(cpuidx, &threadcpu);      
 
       rc=pthread_attr_init(&rt_sched_attr[i]);
@@ -204,13 +219,13 @@ void main(void)
       rc=pthread_attr_setschedpolicy(&rt_sched_attr[i], SCHED_FIFO);
       rc=pthread_attr_setaffinity_np(&rt_sched_attr[i], sizeof(cpu_set_t), &threadcpu);
 
-      rt_param[i].sched_priority=rt_max_prio-i;
-      pthread_attr_setschedparam(&rt_sched_attr[i], &rt_param[i]);
+      //rt_param[i].sched_priority=rt_max_prio-i;
+      //pthread_attr_setschedparam(&rt_sched_attr[i], &rt_param[i]);
 
       threadParams[i].threadIdx=i;
     }
    
-    printf("Service threads will run on %d CPU cores\n", CPU_COUNT(&threadcpu));
+    //printf("Service threads will run on %d CPU cores\n", CPU_COUNT(&threadcpu));
 
     // Create Service threads which will block awaiting release for:
     //
@@ -228,29 +243,29 @@ void main(void)
     if(rc < 0)
         perror("pthread_create for service 1 - V4L2 video frame acquisition");
     else
-        printf("pthread_create successful for service 1\n");
+        //printf("pthread_create successful for service 1\n");
 
 
     // Service_2 = RT_MAX-2	@ 25 Hz
     //
-    rt_param[1].sched_priority=rt_max_prio-2;
+    rt_param[1].sched_priority=rt_max_prio-1;
     pthread_attr_setschedparam(&rt_sched_attr[1], &rt_param[1]);
     rc=pthread_create(&threads[1], &rt_sched_attr[1], Service_2_frame_process, (void *)&(threadParams[1]));
     if(rc < 0)
         perror("pthread_create for service 2 - frame processing");
     else
-        printf("pthread_create successful for service 2\n");
+        //printf("pthread_create successful for service 2\n");
 
 
     // Service_3 = RT_MAX-3	@ 1 Hz
     //
-    rt_param[2].sched_priority=rt_max_prio-3;
+    rt_param[2].sched_priority=rt_max_prio-1;
     pthread_attr_setschedparam(&rt_sched_attr[2], &rt_param[2]);
     rc=pthread_create(&threads[2], &rt_sched_attr[2], Service_3_frame_storage, (void *)&(threadParams[2]));
     if(rc < 0)
         perror("pthread_create for service 3 - flash frame storage");
     else
-        printf("pthread_create successful for service 3\n");
+        //printf("pthread_create successful for service 3\n");
 
 
     // Wait for service threads to initialize and await relese by sequencer.
@@ -262,7 +277,7 @@ void main(void)
     // sleep(1);
  
     // Create Sequencer thread, which like a cyclic executive, is highest prio
-    printf("Start sequencer\n");
+    //printf("Start sequencer\n");
 
     // Sequencer = RT_MAX	@ 100 Hz
     //
@@ -295,7 +310,7 @@ void main(void)
 
    v4l2_frame_acquisition_shutdown();
 
-   printf("\nTEST COMPLETE\n");
+   //printf("\nTEST COMPLETE\n");
 }
 
 
@@ -315,7 +330,7 @@ void Sequencer(int id)
         itime.it_value.tv_sec = 0;
         itime.it_value.tv_nsec = 0;
         timer_settime(timer_1, flags, &itime, &last_itime);
-	printf("Disabling sequencer interval timer with abort=%d and %llu\n", abortTest, seqCnt);
+	//printf("Disabling sequencer interval timer with abort=%d and %llu\n", abortTest, seqCnt);
 
 	// shutdown all services
         abortS1=TRUE; abortS2=TRUE; abortS3=TRUE;
@@ -326,20 +341,20 @@ void Sequencer(int id)
     seqCnt++;
 
     //clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-    //printf("Sequencer on core %d for cycle %llu @ sec=%6.9lf\n", sched_getcpu(), seqCnt, current_realtime-start_realtime);
+    ////printf("Sequencer on core %d for cycle %llu @ sec=%6.9lf\n", sched_getcpu(), seqCnt, current_realtime-start_realtime);
     //syslog(LOG_CRIT, "Sequencer on core %d for cycle %llu @ sec=%6.9lf\n", sched_getcpu(), seqCnt, current_realtime-start_realtime);
 
 
     // Release each service at a sub-rate of the generic sequencer rate
 
     // Service_1 @ 25 Hz
-    if((seqCnt % 20) == 0) sem_post(&semS1);
+    if((seqCnt % 4) == 0) sem_post(&semS1);
 
     // Service_2 @ 25 Hz
-    if((seqCnt % 20) == 0) sem_post(&semS2);
+    if((seqCnt % 5) == 0) sem_post(&semS2);
 
     // Service_3 @ 1 Hz
-    if((seqCnt % 20) == 0) sem_post(&semS3);
+    if((seqCnt % 6) == 0) sem_post(&semS3);
 }
 
 
@@ -354,8 +369,8 @@ void *Service_1_frame_acquisition(void *threadp)
 
     // Start up processing and resource initialization
     clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-    syslog(LOG_CRIT, "S1 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
-    printf("S1 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
+    //syslog(LOG_CRIT, "S1 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
+    //printf("S1 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
 
     while(!abortS1) // check for synchronous abort request
     {
@@ -370,9 +385,9 @@ void *Service_1_frame_acquisition(void *threadp)
 
 	// on order of up to milliseconds of latency to get time
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S1 at 25 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
+        //syslog(LOG_CRIT, "S1 at 25 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
 
-	//if(S1Cnt > 250) {abortTest=TRUE;};
+	//if(S1Cnt > 1821) {abortS1=TRUE;};
     }
 
     // Resource shutdown here
@@ -390,8 +405,8 @@ void *Service_2_frame_process(void *threadp)
     threadParams_t *threadParams = (threadParams_t *)threadp;
 
     clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-    syslog(LOG_CRIT, "S2 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
-    printf("S2 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
+    //syslog(LOG_CRIT, "S2 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
+    //printf("S2 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
 
     while(!abortS2)
     {
@@ -404,7 +419,9 @@ void *Service_2_frame_process(void *threadp)
 	process_cnt=seq_frame_process();
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S2 at 1 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        //syslog(LOG_CRIT, "S2 at 1 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        // after last write, set synchronous abort
+	if(process_cnt >= 1830) {abortTest=TRUE;};
     }
 
     pthread_exit((void *)0);
@@ -420,8 +437,8 @@ void *Service_3_frame_storage(void *threadp)
     threadParams_t *threadParams = (threadParams_t *)threadp;
 
     clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-    syslog(LOG_CRIT, "S3 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
-    printf("S3 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
+    //syslog(LOG_CRIT, "S3 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
+    //printf("S3 thread @ sec=%6.9lf\n", current_realtime-start_realtime);
 
     while(!abortS3)
     {
@@ -434,10 +451,10 @@ void *Service_3_frame_storage(void *threadp)
 	store_cnt=seq_frame_store();
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S3 at 1 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+        //syslog(LOG_CRIT, "S3 at 1 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
 
 	// after last write, set synchronous abort
-	if(store_cnt >= 181) {abortTest=TRUE;};
+	if(store_cnt >= 1830) {abortTest=TRUE;};
     }
 
     pthread_exit((void *)0);
@@ -465,7 +482,7 @@ void print_scheduler(void)
    int schedType;
 
    schedType = sched_getscheduler(getpid());
-
+    
    switch(schedType)
    {
        case SCHED_FIFO:

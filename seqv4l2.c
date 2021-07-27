@@ -442,7 +442,7 @@ void *Service_3_frame_storage(void *threadp)
 
     while(!abortS3)
     {
-        sem_wait(&semS3);
+        //sem_wait(&semS3);
 
 	if(abortS3) break;
         S3Cnt++;

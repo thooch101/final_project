@@ -69,7 +69,7 @@
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
-#define DIFF_REQ_TICK (0.35) // difference requirement to detect tick
+#define DIFF_REQ_TICK (0.3) // difference requirement to detect tick
 #define DIFF_REQ_STILL (0.3) // difference requirement to select frame
 
 
@@ -524,7 +524,7 @@ int seq_frame_process(void)
         diff_frame = absdiff(curr_frame,last_frame);
         
         // store worst case
-        int wc = 255*HRES*VRES;
+        int wc = 255*HRES*VRES*PIXEL_SIZE;
         
         // calculate percent diff
         int sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
@@ -532,7 +532,7 @@ int seq_frame_process(void)
         printf("time diff: %lf, pdiff: %lf\n",(fnow-fstart),pdiff);
         
         // once a tick starts, flag that we are ready to capture once it settles
-        if (need_capture == 1 && pdiff) {
+        if (need_capture == 1) {
             cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
             selected_framecnt++;
             need_capture = 0;

@@ -13,9 +13,10 @@ SRCS= ${HFILES} ${CFILES}
 OBJS= ${CFILES:.c=.o}
 
 all:	seqgenex0 seqgen seqgen2 seqgen3 seqv4l2 clock_times
+		-rm -f frames/*.pgm frames/*.ppm
 
 clean:
-	-rm -f *.o *.d frames/*.pgm frames/*.ppm
+	-rm -f *.o *.d frames/*.pgm frames/*.ppm consoleLog.txt
 	-rm -f seqgenex0 seqgen seqgen2 seqgen3 seqv4l2 clock_times
 
 seqgenex0: seqgenex0.o

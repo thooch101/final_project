@@ -348,7 +348,7 @@ void Sequencer(int id)
     // Release each service at a sub-rate of the generic sequencer rate
 
     // Service_1 @ 25 Hz
-    if((seqCnt % 4) == 0) sem_post(&semS1);
+    if((seqCnt % 1) == 0) sem_post(&semS1);
 
     // Service_2 @ 25 Hz
     if((seqCnt % 5) == 0) sem_post(&semS2);
@@ -375,7 +375,7 @@ void *Service_1_frame_acquisition(void *threadp)
     while(!abortS1) // check for synchronous abort request
     {
 	// wait for service request from the sequencer, a signal handler or ISR in kernel
-        sem_wait(&semS1);
+        //sem_wait(&semS1);
 
 	if(abortS1) break;
         S1Cnt++;
@@ -385,7 +385,7 @@ void *Service_1_frame_acquisition(void *threadp)
 
 	// on order of up to milliseconds of latency to get time
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        //syslog(LOG_CRIT, "S1 at 25 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
+        //printf("S1 at 25 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
 
 	//if(S1Cnt > 1821) {abortS1=TRUE;};
     }
@@ -419,7 +419,7 @@ void *Service_2_frame_process(void *threadp)
 	process_cnt=seq_frame_process();
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        //syslog(LOG_CRIT, "S2 at 1 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        //printf("S2 at 20 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
         // after last write, set synchronous abort
 	if(process_cnt >= 1830) {abortTest=TRUE;};
     }

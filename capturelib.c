@@ -69,8 +69,8 @@
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
-#define DIFF_REQ_TICK (0.32) // difference requirement to detect tick
-#define DIFF_REQ_STILL (0.24) // difference requirement to select frame
+#define DIFF_REQ_TICK (0.35) // difference requirement to detect tick
+#define DIFF_REQ_STILL (0.3) // difference requirement to select frame
 
 
 // Format is used by a number of functions, so made as a file global
@@ -421,7 +421,7 @@ static int read_frame(void)
 
     read_framecnt++;
 
-    ////printf("frame %d ", read_framecnt);
+    //printf("frame %d \n", read_framecnt);
 
     assert(frame_buf.index < n_buffers);
 
@@ -449,10 +449,12 @@ int seq_frame_read(void)
     // save off copy of image with time-stamp here
     ////printf("memcpy to %p from %p for %d bytes\n", (void *)&(ring_buffer.save_frame[ring_buffer.tail_idx].frame[0]), buffers[frame_buf.index].start, frame_buf.bytesused);
     //syslog(LOG_CRIT, "memcpy to %p from %p for %d bytes\n", (void *)&(ring_buffer.save_frame[ring_buffer.tail_idx].frame[0]), buffers[frame_buf.index].start, frame_buf.bytesused);
-    memcpy((void *)&(ring_buffer.save_frame[ring_buffer.tail_idx].frame[0]), buffers[frame_buf.index].start, frame_buf.bytesused);
+    if (read_framecnt > 0) {
+        memcpy((void *)&(ring_buffer.save_frame[ring_buffer.tail_idx].frame[0]), buffers[frame_buf.index].start, frame_buf.bytesused);
 
-    ring_buffer.tail_idx = (ring_buffer.tail_idx + 1) % ring_buffer.ring_size;
-    ring_buffer.count++;
+        ring_buffer.tail_idx = (ring_buffer.tail_idx + 1) % ring_buffer.ring_size;
+        ring_buffer.count++;
+    }
 
     clock_gettime(CLOCK_MONOTONIC, &time_now);
     fnow = (double)time_now.tv_sec + (double)time_now.tv_nsec / 1000000000.0;
@@ -496,19 +498,17 @@ double flast;
 int seq_frame_process(void)
 {
     int cnt, scnt;
-    //printf("processing rb.tail=%d, rb.head=%d, rb.count=%d\n", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
-
-    //ring_buffer.head_idx = (ring_buffer.head_idx + 2) % ring_buffer.ring_size;
-
+    if (ring_buffer.head_idx == ring_buffer.tail_idx) {return selected_framecnt;}
+    
+    /*
     cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
     ring_buffer.head_idx = (ring_buffer.head_idx + 1) % ring_buffer.ring_size;
     ring_buffer.count--;
-    //ring_buffer.head_idx = (ring_buffer.head_idx + 3) % ring_buffer.ring_size;
-    //ring_buffer.count = ring_buffer.count - 5;
+    */
      	
     //printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        
-    if(process_framecnt > 1)
+    if(read_framecnt > 1)
     {	
                 //printf(" processed at %lf, @ %lf FPS\n", (fnow-fstart), (double)(process_framecnt+1) / (fnow-fstart));
         if (selected_framecnt == 0) {
@@ -520,7 +520,7 @@ int seq_frame_process(void)
             
         // diff the frames
         int *diff_frame;
-        unsigned char *curr_frame = (void *)&(scratchpad_buffer);
+        unsigned char *curr_frame = (void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]);
         diff_frame = absdiff(curr_frame,last_frame);
         
         // store worst case
@@ -530,10 +530,11 @@ int seq_frame_process(void)
         int sum_diff = sum(diff_frame,HRES*VRES*PIXEL_SIZE);
         double pdiff = ((double)sum_diff / (double)wc) * 100.0;
         printf("time diff: %lf, pdiff: %lf\n",(fnow-fstart),pdiff);
-        selected_framecnt++;
+        
         // once a tick starts, flag that we are ready to capture once it settles
-        if (need_capture == 1 && pdiff <  DIFF_REQ_STILL) {
-            //selected_framecnt++;
+        if (need_capture == 1 && pdiff) {
+            cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
+            selected_framecnt++;
             need_capture = 0;
             printf("frame %d, pdiff: %lf\n",selected_framecnt,pdiff);
             syslog(LOG_CRIT,"[COURSE#:4][Final Project][Frame Count: %d][Image Capture Start Time: %lf seconds]",selected_framecnt,(fnow-fstart));
@@ -560,6 +561,8 @@ int seq_frame_process(void)
         memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
         percent_diff_old = pdiff;
         flast = fnow;
+        ring_buffer.head_idx = (ring_buffer.head_idx + 1) % ring_buffer.ring_size;
+        ring_buffer.count--;
     }
     else 
     {

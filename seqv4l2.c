@@ -192,23 +192,7 @@ void main(void)
 
     for(i=0; i < NUM_THREADS; i++)
     {
-        /*
-      // run even indexed threads on core 2
-      if(i == 0)
-      {
-          CPU_ZERO(&threadcpu);
-          cpuidx=(2);
-          CPU_SET(cpuidx, &threadcpu);
-      }
 
-      // run odd indexed threads on core 3
-      else
-      {
-          CPU_ZERO(&threadcpu);
-          cpuidx=(3);
-          CPU_SET(cpuidx, &threadcpu);
-      }
-      */ 
       
       CPU_ZERO(&threadcpu);
       cpuidx=(i+1);
@@ -259,7 +243,7 @@ void main(void)
 
     // Service_3 = RT_MAX-3	@ 1 Hz
     //
-    rt_param[2].sched_priority=rt_max_prio-1;
+    rt_param[2].sched_priority=rt_max_prio-2;
     pthread_attr_setschedparam(&rt_sched_attr[2], &rt_param[2]);
     rc=pthread_create(&threads[2], &rt_sched_attr[2], Service_3_frame_storage, (void *)&(threadParams[2]));
     if(rc < 0)
@@ -348,13 +332,13 @@ void Sequencer(int id)
     // Release each service at a sub-rate of the generic sequencer rate
 
     // Service_1 @ 25 Hz
-    if((seqCnt % 1) == 0) sem_post(&semS1);
+    if((seqCnt % 4) == 0) sem_post(&semS1);
 
     // Service_2 @ 25 Hz
     if((seqCnt % 5) == 0) sem_post(&semS2);
 
     // Service_3 @ 1 Hz
-    if((seqCnt % 6) == 0) sem_post(&semS3);
+    if((seqCnt % 10) == 0) sem_post(&semS3);
 }
 
 
@@ -375,7 +359,7 @@ void *Service_1_frame_acquisition(void *threadp)
     while(!abortS1) // check for synchronous abort request
     {
 	// wait for service request from the sequencer, a signal handler or ISR in kernel
-        //sem_wait(&semS1);
+        sem_wait(&semS1);
 
 	if(abortS1) break;
         S1Cnt++;
@@ -442,7 +426,7 @@ void *Service_3_frame_storage(void *threadp)
 
     while(!abortS3)
     {
-        //sem_wait(&semS3);
+        sem_wait(&semS3);
 
 	if(abortS3) break;
         S3Cnt++;

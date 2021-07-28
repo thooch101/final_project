@@ -59,17 +59,17 @@
 #define FRAMES_TO_ACQUIRE (CAPTURE_FRAMES + STARTUP_FRAMES + LAST_FRAMES)
 
 //#define FRAMES_PER_SEC (1) 
-#define FRAMES_PER_SEC (10) 
+//#define FRAMES_PER_SEC (10) 
 //#define FRAMES_PER_SEC (20) 
 //#define FRAMES_PER_SEC (25) 
-//#define FRAMES_PER_SEC (30) 
+#define FRAMES_PER_SEC (30) 
 
 //#define COLOR_CONVERT_RGB
 #define COLOR_CONVERT_GRAY
 #define DUMP_FRAMES
 
 #define DRIVER_MMAP_BUFFERS (6)  // request buffers for delay
-#define DIFF_REQ_TICK (0.3) // difference requirement to detect tick
+#define DIFF_REQ_TICK (0.35) // difference requirement to detect tick
 #define DIFF_REQ_STILL (0.3) // difference requirement to select frame
 
 
@@ -102,7 +102,25 @@ struct ring_buffer_t
     struct save_frame_t save_frame[3*FRAMES_PER_SEC];
 };
 
-static  struct ring_buffer_t	ring_buffer;
+struct save_proc_frame_t
+{
+    unsigned char   frame[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
+    struct timespec time_stamp;
+    char identifier_str[80];
+};
+
+struct proc_ring_buffer_t
+{
+    unsigned int ring_size;
+
+    int tail_idx;
+    int head_idx;
+    int count;
+
+    struct save_proc_frame_t save_frame[3*FRAMES_PER_SEC];
+};
+static  struct ring_buffer_t	    ring_buffer;
+static  struct proc_ring_buffer_t	proc_ring_buffer;
 unsigned char last_frame[HRES*VRES*PIXEL_SIZE];
 
 static int              camera_device_fd = -1;
@@ -279,7 +297,6 @@ int last_selected_framecnt=0;
 int need_capture=1;
 
 unsigned char scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
-unsigned char selected_scratchpad_buffer[MAX_HRES*MAX_VRES*MAX_PIXEL_SIZE];
 
 static int save_image(const void *p, int size, struct timespec *frame_time)
 {
@@ -356,8 +373,8 @@ static int process_image(const void *p, int size)
         for(i=0, newi=0; i<size; i=i+4, newi=newi+6)
         {
             y_temp=(int)frame_ptr[i]; u_temp=(int)frame_ptr[i+1]; y2_temp=(int)frame_ptr[i+2]; v_temp=(int)frame_ptr[i+3];
-            yuv2rgb(y_temp, u_temp, v_temp, &scratchpad_buffer[newi], &scratchpad_buffer[newi+1], &scratchpad_buffer[newi+2]);
-            yuv2rgb(y2_temp, u_temp, v_temp, &scratchpad_buffer[newi+3], &scratchpad_buffer[newi+4], &scratchpad_buffer[newi+5]);
+            yuv2rgb(y_temp, u_temp, v_temp, &proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi], &proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi+1], &proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi+2]);
+            yuv2rgb(y2_temp, u_temp, v_temp, &proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi+3], &proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi+4], &proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi+5]);
         }
 #elif defined(COLOR_CONVERT_GRAY)
         // Pixels are YU and YV alternating, so YUYV which is 4 bytes
@@ -366,8 +383,8 @@ static int process_image(const void *p, int size)
         for(i=0, newi=0; i<size; i=i+4, newi=newi+2)
         {
             // Y1=first byte and Y2=third byte
-            scratchpad_buffer[newi]=frame_ptr[i];
-            scratchpad_buffer[newi+1]=frame_ptr[i+2];
+            proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi]=frame_ptr[i];
+            proc_ring_buffer.save_frame[proc_ring_buffer.tail_idx].frame[newi+1]=frame_ptr[i+2];
         }
 #endif
     }
@@ -380,7 +397,8 @@ static int process_image(const void *p, int size)
     {
         //printf("NO PROCESSING ERROR - unknown format\n");
     }
-
+    proc_ring_buffer.tail_idx = (proc_ring_buffer.tail_idx + 1) % proc_ring_buffer.ring_size;
+    proc_ring_buffer.count++;
     return process_framecnt;
 }
 
@@ -492,19 +510,13 @@ int sum(int *p,int size) {
 }
 
 double ma_percent_diff;
-double percent_diff_old;
+double pdiff_prev;
 double flast;
 
 int seq_frame_process(void)
 {
     int cnt, scnt;
     if (ring_buffer.head_idx == ring_buffer.tail_idx) {return selected_framecnt;}
-    
-    /*
-    cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
-    ring_buffer.head_idx = (ring_buffer.head_idx + 1) % ring_buffer.ring_size;
-    ring_buffer.count--;
-    */
      	
     //printf("rb.tail=%d, rb.head=%d, rb.count=%d ", ring_buffer.tail_idx, ring_buffer.head_idx, ring_buffer.count);
        
@@ -523,7 +535,7 @@ int seq_frame_process(void)
         unsigned char *curr_frame = (void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]);
         diff_frame = absdiff(curr_frame,last_frame);
         
-        // store worst case
+        // stores worst case
         int wc = 255*HRES*VRES*PIXEL_SIZE;
         
         // calculate percent diff
@@ -533,7 +545,7 @@ int seq_frame_process(void)
         
         // once a tick starts, flag that we are ready to capture once it settles
         if (need_capture == 1) {
-            cnt=process_image((void *)&(ring_buffer.save_frame[ring_buffer.head_idx].frame[0]), HRES*VRES*PIXEL_SIZE);
+            cnt=process_image((void *)&ring_buffer.save_frame[ring_buffer.head_idx].frame[0], HRES*VRES*PIXEL_SIZE);
             selected_framecnt++;
             need_capture = 0;
             printf("frame %d, pdiff: %lf\n",selected_framecnt,pdiff);
@@ -559,7 +571,7 @@ int seq_frame_process(void)
         }
         */
         memcpy(last_frame,curr_frame,HRES*VRES*PIXEL_SIZE);
-        percent_diff_old = pdiff;
+        pdiff_prev = pdiff;
         flast = fnow;
         ring_buffer.head_idx = (ring_buffer.head_idx + 1) % ring_buffer.ring_size;
         ring_buffer.count--;
@@ -576,7 +588,9 @@ int seq_frame_store(void)
 {
     int cnt = 0;
     if (selected_framecnt > last_selected_framecnt) {
-        cnt=save_image(scratchpad_buffer, HRES*VRES*PIXEL_SIZE, &time_now);
+        cnt=save_image(proc_ring_buffer.save_frame[proc_ring_buffer.head_idx].frame, HRES*VRES*PIXEL_SIZE, &time_now);
+        proc_ring_buffer.head_idx = (proc_ring_buffer.head_idx + 1) % proc_ring_buffer.ring_size;
+        proc_ring_buffer.count--;
         //printf("save_framecnt=%d ", save_framecnt);
 
 
@@ -795,6 +809,11 @@ static void init_mmap(char *dev_name)
 	ring_buffer.head_idx=0;
 	ring_buffer.count=0;
 	ring_buffer.ring_size=3*FRAMES_PER_SEC;
+    
+    proc_ring_buffer.tail_idx=0;
+	proc_ring_buffer.head_idx=0;
+	proc_ring_buffer.count=0;
+	proc_ring_buffer.ring_size=3*FRAMES_PER_SEC;
 
         if (-1 == xioctl(camera_device_fd, VIDIOC_REQBUFS, &req)) 
         {
